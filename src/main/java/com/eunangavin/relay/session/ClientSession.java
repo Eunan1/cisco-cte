@@ -42,12 +42,8 @@ public final class ClientSession {
     /**
      * Binds a connection to this identity, evicting any current one.
      *
-     * <p><b>Takeover, not rejection.</b> If a connection already holds this name we replace
-     * it rather than refusing the newcomer. The reason is that a half-open TCP connection is
-     * undetectable until a write to it fails — so rejecting would permanently strand a
-     * client whose network dropped, with the server insisting it is still connected. The
-     * trade-off, documented in APPROACH.md: two clients genuinely sharing a name will fight
-     * over it.
+     * Takeover, not rejection. If a connection already holds this name we replace
+     * it rather than refusing the newcomer.
      *
      * @return the evicted connection, or null if none. <b>The caller must close it outside
      *         the lock</b> — closing does socket I/O, and holding a lock across I/O is how
@@ -70,9 +66,8 @@ public final class ClientSession {
     /**
      * Detaches a connection, if it is still the current one.
      *
-     * <p>The identity check is load-bearing. Consider:
+     * The identity check is load-bearing. Consider:
      *
-     * <pre>
      *   t0  connection A registers as "alice"       connection = A
      *   t1  connection B registers as "alice"       connection = B, A evicted
      *   t2  A's reader loop exits and detaches      ← must NOT null out B

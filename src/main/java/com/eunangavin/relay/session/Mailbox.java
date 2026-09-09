@@ -35,9 +35,10 @@ import java.util.List;
  *
  * <h2>Threading</h2>
  * <b>This class is not thread-safe and does not try to be.</b> Every method is called under
- * the owning {@link ClientSession}'s lock, which is also what makes the enqueue-then-pump
- * sequence atomic. Adding internal synchronisation here would give the illusion of safety
- * without the atomicity that actually matters.
+ * the owning {@link ClientSession}'s lock. That lock is what makes the take-then-offer loop
+ * inside {@code pump} one critical section, which is what preserves FIFO when two senders
+ * race. Adding internal synchronisation here would give the illusion of safety without the
+ * atomicity that actually matters.
  */
 final class Mailbox {
 
