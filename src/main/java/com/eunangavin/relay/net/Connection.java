@@ -31,7 +31,7 @@ import java.util.function.Consumer;
  * makes the brief's "a slow client does not block unrelated clients" requirement true.
  *
  * <p>If delivery wrote straight to the recipient's socket it would do so on whichever
- * thread was delivering — in STORY-3 that is the <em>sender's</em> reader thread. A
+ * thread was delivering, which is the <em>sender's</em> reader thread. A
  * recipient that has stopped reading fills its kernel receive buffer, TCP's window closes,
  * our {@code write()} blocks, and now Alice's connection is stalled by Bob's problem.
  *
@@ -98,8 +98,8 @@ public final class Connection implements ClientConnection {
         this.outbound = new ArrayBlockingQueue<>(queueCapacity);
         this.onClosed = onClosed;
 
-        // Buffer before the Data* wrappers. Without this every writeInt is its own syscall;
-        // the codec's flush() is what pushes a completed frame out.
+        // Buffered before the Data* wrappers, or every writeInt is its own syscall. The
+        // codec's flush() is what pushes a completed frame out.
         this.in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
         this.out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
     }
@@ -141,14 +141,12 @@ public final class Connection implements ClientConnection {
                 service.onFrame(this, frame);
             }
         } catch (ProtocolException e) {
-            // Stream-level fault: the length prefix or body was unusable, so we can no
-            // longer locate the next frame boundary. Tell them, then close - continuing
-            // would read garbage forever. The graceful close is what gets this delivered.
+            // Stream-level fault: we can no longer locate the next frame boundary, so tell
+            // them and close. The graceful close is what gets this last frame delivered.
             Log.warn("%s protocol fault: %s", label, e.getMessage());
             offer(new Frame.Error(e.code(), e.getMessage()));
         } catch (IOException e) {
-            // Either the peer vanished or we closed the socket ourselves during shutdown.
-            // Neither is an error worth a stack trace.
+            // The peer vanished, or we closed the socket ourselves during shutdown.
             if (!closing.get()) {
                 Log.info("%s connection lost: %s", label, e.getMessage());
             }
@@ -170,14 +168,13 @@ public final class Connection implements ClientConnection {
                 codec.writeFrame(out, frame);
             }
         } catch (InterruptedException e) {
-            // A hard close cut us short. Restore the flag rather than swallowing the intent.
-            Thread.currentThread().interrupt();
+            Thread.currentThread().interrupt();   // restore the flag, do not swallow it
         } catch (IOException e) {
             if (!closing.get()) {
                 Log.info("%s write failed: %s", label, e.getMessage());
             }
         } catch (ProtocolException e) {
-            // We tried to send something oversized. That is our bug, not the peer's.
+            // Something oversized. Our bug, not the peer's.
             Log.warn("%s could not encode a frame: %s", label, e.getMessage());
         } finally {
             writerDone.countDown();
@@ -248,7 +245,7 @@ public final class Connection implements ClientConnection {
         try {
             socket.close();
         } catch (IOException ignored) {
-            // Already gone; nothing useful to do or say.
+            // Already gone.
         }
         onClosed.accept(this);
     }

@@ -58,9 +58,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p><b>Its limitation, worth stating:</b> this works because a client has one operation in
  * flight at a time. Two concurrent sends would each take whichever reply arrived first,
- * possibly the wrong one. That is precisely what a {@code correlationId} solves — the field
- * deliberately deferred in ADR-002. One instance of this class is intended for use by one
- * thread at a time.
+ * possibly the wrong one. That is precisely what a {@code correlationId} on the envelope
+ * solves — deliberately deferred, and listed under known limitations. One instance of this
+ * class is intended for use by one thread at a time.
  */
 public final class RelayClient implements AutoCloseable {
 
@@ -97,8 +97,7 @@ public final class RelayClient implements AutoCloseable {
     private RelayClient(Socket socket, int maxFrameBytes) throws IOException {
         this.socket = socket;
         this.codec = new FrameCodec(maxFrameBytes);
-        // Buffer before the Data* wrappers, exactly as the server's Connection does:
-        // otherwise every writeInt is its own syscall.
+        // Buffered before the Data* wrappers, exactly as the server's Connection does.
         this.in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
         this.out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
     }
@@ -196,7 +195,7 @@ public final class RelayClient implements AutoCloseable {
      * Waits for the next reply.
      *
      * <p>Bounded on purpose. An unbounded {@code take()} would turn a server-side bug into a
-     * terminal that hangs with no explanation — the worst thing that can happen mid-demo.
+     * terminal that hangs with no explanation.
      */
     private Frame awaitReply() throws IOException {
         try {
@@ -216,7 +215,7 @@ public final class RelayClient implements AutoCloseable {
         try {
             codec.writeFrame(out, frame);
         } catch (ProtocolException e) {
-            // Only thrown if we tried to send something oversized - our bug, not the server's.
+            // Only if we tried to send something oversized — our bug, not the server's.
             throw new IOException("could not encode " + frame, e);
         } finally {
             writeLock.unlock();
@@ -241,7 +240,7 @@ public final class RelayClient implements AutoCloseable {
         try {
             socket.close();   // unblocks the reader thread's readFrame
         } catch (IOException ignored) {
-            // Already gone; nothing useful to do.
+            // Already gone.
         }
     }
 }

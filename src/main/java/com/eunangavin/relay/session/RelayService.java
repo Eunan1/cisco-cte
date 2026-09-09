@@ -58,9 +58,8 @@ public final class RelayService {
             case Frame.Send send -> handleSend(connection, send);
             case Frame.Ack ack -> handleAck(connection, ack);
 
-            // Server-to-client frames arriving inbound mean the peer is not speaking our
-            // protocol. The frame decoded, but in this direction it is nonsense, so we say
-            // so and close rather than guess at intent.
+            // Server-to-client frames arriving inbound: decoded fine, but nonsense in this
+            // direction. Say so and close rather than guess at intent.
             case Frame.Registered ignored -> rejectInboundServerFrame(connection, frame);
             case Frame.Accepted ignored -> rejectInboundServerFrame(connection, frame);
             case Frame.Rejected ignored -> rejectInboundServerFrame(connection, frame);
@@ -75,8 +74,8 @@ public final class RelayService {
 
     private void handleRegister(ClientConnection connection, Frame.Register register) {
         if (connection.session() != null) {
-            // One identity per connection. Allowing a second would leave the first session
-            // bound to a connection that no longer considers itself to be that client.
+            // One identity per connection, or the first session is left bound to a
+            // connection that no longer considers itself that client.
             sendOrDrop(connection, new Frame.Error(ErrorCode.ALREADY_REGISTERED,
                     "this connection is already registered as " + connection.session().clientId()));
             return;
@@ -100,8 +99,8 @@ public final class RelayService {
             result.evicted().close("identity taken over");
         }
 
-        // attach() has already requeued anything the previous connection held unacknowledged,
-        // so this count is the real backlog that is about to arrive.
+        // attach() has already requeued anything the previous connection held unacked, so
+        // this count is the real backlog about to arrive.
         ClientSession session = result.session();
         sendOrDrop(connection, new Frame.Registered(register.clientId(), session.pendingCount()));
         Log.info("%s registered as '%s' (%d pending, %d identities known)",
@@ -119,18 +118,16 @@ public final class RelayService {
             return;
         }
 
-        // A SEND without a messageId cannot even be REJECTED, because a Rejected frame is
-        // keyed by that id - there is literally nothing to answer. So the peer is not
-        // speaking our protocol, and it gets the same treatment as any malformed frame.
+        // A SEND without a messageId cannot even be REJECTED — a Rejected frame is keyed by
+        // that id, so there is nothing to answer. Treated as any other malformed frame.
         if (isBlank(send.messageId()) || isBlank(send.to()) || send.payload() == null) {
             rejectUnusableFrame(connection, "SEND requires messageId, to and payload");
             return;
         }
 
-        // Bytes, not String.length(). A multi-byte character makes those differ, and the
-        // bound is a byte bound. The connection survives: the frame parsed fine, we are
-        // simply declining its contents - unlike a frame-size breach, which desynchronises
-        // the stream and therefore has to close.
+        // Bytes, not String.length() — a multi-byte character makes those differ. The
+        // connection survives: the frame parsed fine, we are declining its contents. A
+        // frame-size breach is the opposite, because it desynchronises the stream.
         int payloadBytes = send.payload().getBytes(StandardCharsets.UTF_8).length;
         if (payloadBytes > config.maxPayloadBytes()) {
             reject(connection, send, ErrorCode.PAYLOAD_TOO_LARGE,
@@ -158,9 +155,9 @@ public final class RelayService {
             case MAILBOX_FULL -> reject(connection, send, ErrorCode.MAILBOX_FULL,
                     send.to() + " is at its mailbox limit of " + config.maxMailboxMessages());
             case ACCEPTED -> {
-                // ACCEPTED means "in the recipient's mailbox" - NOT delivered, not read. It
-                // is answered before the pump runs, so the sender's confirmation never
-                // depends on the recipient being reachable.
+                // ACCEPTED means "in the recipient's mailbox" — not delivered, not read.
+                // Answered before the pump runs, so the sender's confirmation never depends
+                // on the recipient being reachable.
                 sendOrDrop(connection, new Frame.Accepted(send.messageId()));
                 Log.info("%s -> %s accepted %s (%s now holds %d)",
                         sender.clientId(), send.to(), send.messageId(),
@@ -181,14 +178,9 @@ public final class RelayService {
             return;
         }
 
-        // Scoped to this client's OWN mailbox. A client acking someone else's message id
-        // never holds a reference to that mailbox, so removing it is structurally impossible
-        // - not a validation that could be dropped in a refactor.
-        //
-        // The result is deliberately not turned into an error. A stale or repeated ack is a
-        // no-op that still answers ACK_OK, because at-least-once delivery GUARANTEES double
-        // acks: ack, connection drops before it lands, reconnect, redelivered, ack again.
-        // Erroring would punish a client for behaviour our own guarantee forces on it.
+        // Scoped to this client's OWN mailbox, so acking someone else's id is structurally
+        // impossible rather than a validation that could be dropped in a refactor. The
+        // result is deliberately not an error: at-least-once GUARANTEES double acks.
         if (session.ack(ack.messageId())) {
             Log.info("%s acked %s (%d remaining)",
                     session.clientId(), ack.messageId(), session.mailboxSize());

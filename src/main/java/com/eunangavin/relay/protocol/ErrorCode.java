@@ -5,17 +5,7 @@ package com.eunangavin.relay.protocol;
  *
  * <p>The brief requires us to "define how the service reports invalid input and resource
  * limits", so the full set is enumerated here rather than scattered as string literals.
- * An enum also means the wire values are fixed at compile time and a typo cannot ship.
  *
- * <p>The grouping below is not just cosmetic — it maps to how the server reacts:
- * <ul>
- *   <li><b>Request-level</b> faults are answered with a {@code REJECTED} or {@code ERROR}
- *       frame and the connection carries on. The frame parsed fine; we simply declined it.</li>
- *   <li><b>Stream-level</b> faults ({@link #FRAME_TOO_LARGE}, {@link #MALFORMED_FRAME})
- *       mean we can no longer trust where the next frame begins, so the connection is
- *       closed. Continuing would read garbage forever.</li>
- * </ul>
- * That asymmetry is the interesting part, and it is worth being able to explain.
  */
 public enum ErrorCode {
 

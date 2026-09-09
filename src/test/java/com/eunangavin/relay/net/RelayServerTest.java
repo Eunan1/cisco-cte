@@ -40,7 +40,7 @@ class RelayServerTest {
             0,            // port 0 - the OS picks, so parallel runs never collide
             64 * 1024,    // maxFrameBytes
             32 * 1024,    // maxPayloadBytes
-            100,          // maxMailboxMessages (unused until STORY-3)
+            100,          // maxMailboxMessages
             3,            // maxConnections - deliberately tiny
             8,            // outboundQueueCapacity - deliberately tiny
             Duration.ofSeconds(2));
@@ -100,8 +100,8 @@ class RelayServerTest {
     @Test
     @DisplayName("reconnecting with the same id reattaches the same session")
     void reregisteringReattachesSameSession() throws IOException {
-        // Requirement 6, over a real socket. The session object surviving is what will make
-        // offline messages survive once STORY-3 hangs a mailbox off it.
+        // Requirement 6, over a real socket. The session object surviving is what makes its
+        // mailbox — and so the offline messages in it — survive too.
         TestClient first = registered("alice");
         ClientSession original = registry.find("alice").orElseThrow();
 

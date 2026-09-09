@@ -15,7 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * A minimal client for tests. STORY-5 replaces this with the real {@code RelayClient}.
+ * A minimal client for tests, independent of the shipped {@code RelayClient} so that a bug
+ * in one cannot hide a bug in the other.
  *
  * <p><b>No background thread.</b> Reads are synchronous, with the socket's own
  * {@code SO_TIMEOUT} providing the bound — so a server that never replies fails the test

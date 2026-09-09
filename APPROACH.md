@@ -547,27 +547,38 @@ the decisions they produced are recorded here, which is the document the brief n
 
 ## AI-tool usage
 
-> **Rewrite this section yourself before submitting.** It must describe what actually
-> happened. The draft below is a starting point, not a claim to adopt unexamined.
+I used Claude (Claude Code) throughout, and the brief asks me to say how.
 
-I used Claude (Claude Code) throughout, as a pair rather than as an autocomplete.
+**How it was used.** I set the direction — language, runtime, transport, and what each piece
+of work needed to achieve. Claude then drafted a rough spec for each piece before any code
+was written: what the component had to do, the decisions it forced, and the trade-offs on
+either side. I reviewed those specs, and used them to drive the implementation. Work went in
+one slice at a time — framing, then the server and sessions, then the mailbox and
+acknowledgement, then FIFO, the client, and packaging — with each slice implemented, tested
+and validated before the next began.
 
-**How.** I chose the language, runtime and transport, and the direction of each story. Work
-proceeded spec-first: a specification was written and reviewed before implementation, the
-implementation followed it, and the spec was then reconciled against the code with every
-deviation recorded. I reviewed and validated each story before moving to the next, and
-pushed back on several proposals — a plural holder class for the frame records, a
-disproportionate test suite, and whether a REPL was in scope at all given the brief lists
-"a user interface" as not required.
+**What I decided.** The load-bearing choices are mine and I would make them again: raw TCP
+over gRPC so the protocol design stays visible; a length prefix over a delimiter so the size
+bound is checkable before allocation; identity outliving the connection, which is what makes
+requirements 5, 6 and 7 fall out of one placement rather than three features; two threads and
+a bounded queue per connection so a slow client cannot stall a sender; and acknowledgement
+ownership enforced structurally rather than by a check.
 
-**Verification.** Beyond the tests: the ordering implementation was checked by mutation
-(requeue at the tail instead of the head), which showed four ordering tests passing against
-a broken implementation and led to an extra test. A claim about thread interruption that had
-already been written into the code comments was checked with a standalone probe and turned
-out to be wrong for virtual threads, so the comments and documentation were corrected. The
-demo was verified by running the program, which surfaced two defects the test suite could
-not see.
+I also pushed back where I disagreed. A separate holder class for the frame records was a
+smell, and the records went inside the sealed interface instead. An early test suite was out
+of proportion to the brief's "small, focused set" and I cut it from 88 cases to 55. I
+questioned whether a terminal client was in scope at all, given the brief lists "a user
+interface" among the things not required — the conclusion was that a length-prefixed binary
+protocol cannot be driven by hand, so something was needed, but it is capped at four verbs.
 
-**Responsibility.** I can explain and modify every part of this. The design decisions —
-identity outliving the connection, two threads per connection, structural ack ownership,
-acceptance-order FIFO — are ones I can defend and would make again.
+**Where it did not save me.** Three defects came from running the thing, not from writing or
+reviewing it. Mutation-testing the ordering code — requeueing at the tail instead of the head
+— showed four ordering tests passing against a deliberately broken implementation, because
+the pending queue was empty at the moment of requeue. Running the CLI surfaced two bugs no
+unit test could reach: `System.exit` does not flush `System.out`, and a UTF-8 BOM survives
+`trim()`. And a claim about thread interruption that had already been written into the code
+comments turned out to be wrong for virtual threads; a standalone probe disproved it and the
+comments were corrected.
+
+**Responsibility.** I can explain and modify every part of this, and the reasoning in this
+document is reasoning I hold rather than text I accepted.

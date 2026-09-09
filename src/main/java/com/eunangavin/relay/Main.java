@@ -13,12 +13,11 @@ import java.util.concurrent.CountDownLatch;
  *
  * <pre>
  *   java -jar relay.jar server
- *   java -jar relay.jar client alice      (STORY-5)
+ *   java -jar relay.jar client alice
  * </pre>
  *
  * <p>One jar rather than two keeps "the artifact produced" a single clean answer in the
- * README, and makes the demo's two commands nearly identical — which matters when typing
- * in front of an audience.
+ * README, and makes the two commands nearly identical.
  *
  * <p>Wiring is explicit constructor calls. With no framework there is no dependency
  * injection and no auto-configuration, so the entire object graph is visible here in a
@@ -54,9 +53,8 @@ public final class Main {
         RelayServer server = new RelayServer(config, service);
         server.start();
 
-        // Ctrl-C, and `docker stop` in STORY-6, arrive as SIGTERM. Without this hook the
-        // JVM exits immediately and none of the graceful shutdown in RelayServer.close
-        // ever runs - no SHUTDOWN frames, no draining, no thread cleanup.
+        // Ctrl-C and `docker stop` both arrive as SIGTERM. Without this hook the JVM exits
+        // immediately and none of RelayServer.close runs — no SHUTDOWN frames, no draining.
         CountDownLatch stopped = new CountDownLatch(1);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             server.close();
@@ -71,8 +69,8 @@ public final class Main {
      * Prints the effective configuration on boot.
      *
      * <p>Worth the eight lines: it answers "how are ports, timeouts and limits controlled?"
-     * before anyone asks, and during the demo it puts every bound on screen where the
-     * interviewer can see them.
+     * without anyone having to read the source, and makes the bounds actually in force
+     * visible in the server's own output.
      */
     private static void printConfig(RelayConfig config) {
         Log.info("relay starting with effective configuration:");

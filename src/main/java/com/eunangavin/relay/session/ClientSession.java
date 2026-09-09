@@ -5,23 +5,19 @@ import com.eunangavin.relay.protocol.Frame;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * A logical client. <b>Identity outlives the connection.</b>
+ * A logical client. Identity outlives the connection.
  *
- * <p>This is the single most important type in the project. A {@code ClientSession} is
- * created on first registration and then persists: the socket is a <em>nullable field on
- * it</em>, not the other way round. Disconnecting sets that field to null; reconnecting
- * sets it again. Nothing else is lost.
+ * A {@code ClientSession} is created on first registration and then persists:
+ * The socket is a nullable field on it, not the other way round.
+ * Disconnecting sets that field to null. Reconnecting sets it again. Nothing else is lost.
  *
- * <p>In STORY-3 the mailbox hangs off this object, and requirements 5, 6 and 7 of the brief
- * — retention while offline, reattachment by name, redelivery of unacked messages — all
- * fall out of that placement. Had the mailbox hung off the connection instead, every one of
- * them would have been a rewrite.
+ * The mailbox hangs off this object, and allows for requirements
+ * 5: retention while offline
+ * 6: reattachment by name
+ * 7: redelivery of unacked messages
  *
- * <p><b>Locking.</b> A {@link ReentrantLock} rather than {@code synchronized}: on Java 21 a
- * virtual thread that blocks inside a synchronized block pins its carrier platform thread,
- * and enough pinned carriers starve the scheduler. (JEP 491 removed that limitation in Java
- * 24, but this artifact targets 21 and may run on it. {@code ReentrantLock} also wins
- * independently for {@code tryLock} and interruptibility.)
+ * Had the mailbox hung off the connection instead, every one of them would have been a rewrite.
+ *
  */
 public final class ClientSession {
 
@@ -61,9 +57,8 @@ public final class ClientSession {
         lock.lock();
         try {
             ClientConnection evicted = this.connection;
-            // Anything delivered to the connection being replaced was never acknowledged,
-            // so it goes back to pending for the newcomer. Without this, a takeover would
-            // strand those messages in inflight with nobody left to ack them.
+            // Anything inflight on the replaced connection was never acknowledged, so it
+            // goes back to pending — otherwise nobody is left to ack it.
             mailbox.requeueInflight();
             this.connection = incoming;
             return evicted == incoming ? null : evicted;
@@ -91,9 +86,8 @@ public final class ClientSession {
         lock.lock();
         try {
             if (this.connection == leaving) {
-                // Requeue BEFORE clearing the connection, and only for the connection that
-                // actually held the identity. Requirement 7: a message delivered before a
-                // disconnect but not acknowledged must be available again on reconnect.
+                // Requeue BEFORE clearing the connection. Requirement 7: delivered but
+                // unacknowledged must be available again on reconnect.
                 mailbox.requeueInflight();
                 this.connection = null;
             }

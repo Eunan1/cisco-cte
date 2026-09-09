@@ -86,7 +86,7 @@ public final class RelayCli implements RelayClient.MessageListener {
                 default -> System.out.println("   unknown command. try 'help'");
             }
         } catch (Exception e) {
-            // Never let a bad command kill the session - the demo has to survive a typo.
+            // A typo must not disconnect you.
             System.out.println("   !! " + e.getMessage());
         }
         return true;
@@ -120,7 +120,7 @@ public final class RelayCli implements RelayClient.MessageListener {
 
     @Override
     public void onDeliver(Frame.Deliver deliver) {
-        // Print the ack command alongside it, so the demo needs no memory.
+        // Print the ack command alongside it, so the id need not be retyped from memory.
         System.out.printf("<< DELIVER   %s from %s : %s     <-- type 'ack %s'%n",
                 deliver.messageId(), deliver.from(), deliver.payload(), deliver.messageId());
     }

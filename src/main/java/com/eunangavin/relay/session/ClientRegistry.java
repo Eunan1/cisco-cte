@@ -51,7 +51,7 @@ public final class ClientRegistry {
      *
      * <p>Reattachment is the whole point: requirement 6 of the brief is satisfied by this
      * method returning the <em>same</em> {@link ClientSession} instance after a disconnect,
-     * with whatever state STORY-3 hangs off it still intact.
+     * with its mailbox still intact.
      */
     public Registration register(String clientId, ClientConnection incoming) {
         if (!isValidClientId(clientId)) {

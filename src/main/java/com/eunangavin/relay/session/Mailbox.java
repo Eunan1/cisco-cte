@@ -30,7 +30,7 @@ import java.util.List;
  * {@code HashMap} would lose the ordering that FIFO redelivery depends on.
  *
  * <p>{@link ArrayDeque} gives O(1) append at the tail for new messages and O(1) prepend at
- * the head for requeued ones. Choosing a deque now is what makes STORY-4's FIFO guarantee
+ * the head for requeued ones. Choosing a deque up front is what makes the FIFO guarantee
  * nearly free rather than a restructure.
  *
  * <h2>Threading</h2>
@@ -112,7 +112,7 @@ final class Mailbox {
     /**
      * Returns everything delivered-but-unacknowledged to the <b>front</b> of pending, in its
      * original relative order. Called when the connection those messages were delivered to
-     * goes away — which is requirement 7 of the brief, and the basis of FIFO in STORY-4.
+     * goes away — requirement 7 of the brief, and the basis of FIFO across reconnects.
      */
     void requeueInflight() {
         if (inflight.isEmpty()) {

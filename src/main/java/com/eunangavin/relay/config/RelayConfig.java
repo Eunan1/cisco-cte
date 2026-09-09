@@ -80,8 +80,7 @@ public record RelayConfig(
      * outside a container can reach it. Only the client needs a target, so adding it to the
      * record would mean every server test constructing a value it never uses.
      *
-     * <p>Needed by the Docker demo in STORY-6, where the client reaches the server by
-     * container name rather than localhost.
+     * <p>Needed when the client reaches the server by container name rather than localhost.
      */
     public static String clientHost() {
         return clientHost(System::getenv);
@@ -118,10 +117,11 @@ public record RelayConfig(
         try {
             return Integer.parseInt(raw.trim());
         } catch (NumberFormatException e) {
-            // Falls back rather than throwing, per the story's acceptance criteria.
-            // Worth revisiting: a typo like RELAY_MAX_MAILBOX_MESSAGES=1oo would silently
-            // run with the default, and for a value that guards a resource limit,
-            // failing fast at startup is arguably the safer behaviour.
+            // Falls back rather than throwing, so a bad override can never stop the server
+            // starting. Worth revisiting: a typo like RELAY_MAX_MAILBOX_MESSAGES=1oo runs
+            // silently with the default, and for a value guarding a resource limit, failing
+            // fast at startup is arguably safer. The boot banner is the mitigation — the
+            // effective value is always printed.
             return fallback;
         }
     }
