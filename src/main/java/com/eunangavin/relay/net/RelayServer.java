@@ -24,10 +24,10 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Binds a port, accepts connections, and shuts down predictably.
  *
- * <p>The acceptor runs on a platform thread — there is exactly one and it lives for the
- * process, so a virtual thread would buy nothing. Every connection gets two virtual threads
- * from {@link Executors#newVirtualThreadPerTaskExecutor()}, which is what makes
- * thread-per-connection affordable: a virtual thread's stack lives on the heap and the JVM
+ * The acceptor runs on a platform thread — there is exactly one and it lives for the
+ * process, so a virtual thread would buy nothing.
+ * Every connection gets two virtual threads from {@link Executors#newVirtualThreadPerTaskExecutor()},
+ * which is what makes thread-per-connection affordable: a virtual thread's stack lives on the heap and the JVM
  * unmounts it from its carrier while it blocks, so a parked reader holds no OS thread.
  */
 public final class RelayServer implements AutoCloseable {
@@ -84,13 +84,13 @@ public final class RelayServer implements AutoCloseable {
      * Whether the last {@link #close()} saw every connection thread finish inside the
      * shutdown timeout.
      *
-     * <p>This is the only workable thread-leak signal here: connection threads are
-     * <b>virtual</b>, and virtual threads do not appear in
+     * This is the only workable thread-leak signal here: connection threads are
+     * virtual, and virtual threads do not appear in
      * {@link Thread#getAllStackTraces()}, so a test cannot enumerate them. What it can do is
-     * ask the executor whether every task it was given actually returned — which is exactly
+     * ask the executor whether every task it was given actually returned which is exactly
      * the question "did any reader or writer survive?".
      *
-     * <p>False means a reader or writer was still parked when the timeout expired, which in
+     * False means a reader or writer was still parked when the timeout expired, which in
      * practice means the unblock asymmetry broke: interrupt for the writer, socket close for
      * the reader.
      */
@@ -101,14 +101,13 @@ public final class RelayServer implements AutoCloseable {
     /**
      * Stops the server. Order matters, and each step depends on the previous one:
      *
-     * <ol>
-     *   <li>Refuse new work, so nothing registers while we are tearing down.</li>
-     *   <li>Close the ServerSocket. There is no "stop accepting" call — closing is what
-     *       makes the acceptor's blocked {@code accept()} throw, which is its exit route.</li>
-     *   <li>Tell connected clients why, and give the writers a bounded moment to flush it.</li>
-     *   <li>Close every connection and await the threads.</li>
-     *   <li>Report anything that had to be forced.</li>
-     * </ol>
+     * Refuse new work, so nothing registers while we are tearing down.
+     * Close the ServerSocket. There is no "stop accepting" call, closing is what makes the acceptor's
+     *  blocked {@code accept()} throw, which is its exit route.
+     * Tell connected clients why, and give the writers a bounded moment to flush it.
+     * Close every connection and await the threads.
+     * Report anything that had to be forced.
+     *
      */
     @Override
     public void close() {

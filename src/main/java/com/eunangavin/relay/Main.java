@@ -11,15 +11,13 @@ import java.util.concurrent.CountDownLatch;
 /**
  * Entry point. One artifact, dispatched by subcommand:
  *
- * <pre>
  *   java -jar relay.jar server
  *   java -jar relay.jar client alice
- * </pre>
  *
- * <p>One jar rather than two keeps "the artifact produced" a single clean answer in the
+ * One jar rather than two keeps "the artifact produced" a single clean answer in the
  * README, and makes the two commands nearly identical.
  *
- * <p>Wiring is explicit constructor calls. With no framework there is no dependency
+ * Wiring is explicit constructor calls. With no framework there is no dependency
  * injection and no auto-configuration, so the entire object graph is visible here in a
  * dozen lines. At this size that is a readability gain, not a cost.
  */
@@ -68,7 +66,7 @@ public final class Main {
     /**
      * Prints the effective configuration on boot.
      *
-     * <p>Worth the eight lines: it answers "how are ports, timeouts and limits controlled?"
+     * Worth the eight lines: it answers "how are ports, timeouts and limits controlled?"
      * without anyone having to read the source, and makes the bounds actually in force
      * visible in the server's own output.
      */

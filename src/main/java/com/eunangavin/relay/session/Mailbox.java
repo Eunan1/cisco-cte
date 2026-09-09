@@ -8,33 +8,31 @@ import java.util.List;
 /**
  * One client's messages, split by whether they have been sent yet.
  *
- * <pre>
  *   ┌──────────────────────────────┬──────────────────────────────────┐
- *   │ pending: ArrayDeque&lt;Message&gt; │ inflight: LinkedHashMap&lt;Id,Msg&gt;  │
+ *   │ pending: ArrayDeque: Message │ inflight: LinkedHashMap: Id,Msg; │
  *   │  never sent                  │  sent, awaiting ACK              │
  *   └──────────────────────────────┴──────────────────────────────────┘
  *         ▲                    │                        │
  *         │  requeue on        │ takeForDelivery        │ ack
  *         │  disconnect        ▼                        ▼
  *         └──────────────── inflight ──────────────▶ removed
- * </pre>
  *
- * <h2>Why two structures</h2>
- * A mailbox must answer two different questions — what has not been sent, and what has been
- * sent but not confirmed. A single list with a cursor ("everything before index n is sent")
- * breaks the moment an ack removes an element from the middle, which is normal because acks
- * may arrive out of order.
+ * Why two structures
+ * A mailbox must answer two different questions:
+ * What has not been sent, and what has been sent but not confirmed.
+ * A single list with a cursor ("everything before index n is sent") breaks the moment an ack removes an element
+ * from the middle, which is normal because acks may arrive out of order.
  *
- * <p>{@link LinkedHashMap} gives both properties the inflight side needs at once: O(1)
+ * {@link LinkedHashMap} gives both properties the inflight side needs at once: O(1)
  * lookup by id for the ack path, and insertion order for the requeue path. A plain
  * {@code HashMap} would lose the ordering that FIFO redelivery depends on.
  *
- * <p>{@link ArrayDeque} gives O(1) append at the tail for new messages and O(1) prepend at
+ * {@link ArrayDeque} gives O(1) append at the tail for new messages and O(1) prepend at
  * the head for requeued ones. Choosing a deque up front is what makes the FIFO guarantee
  * nearly free rather than a restructure.
  *
- * <h2>Threading</h2>
- * <b>This class is not thread-safe and does not try to be.</b> Every method is called under
+ * Threading
+ * This class is not thread-safe and does not try to be. Every method is called under
  * the owning {@link ClientSession}'s lock. That lock is what makes the take-then-offer loop
  * inside {@code pump} one critical section, which is what preserves FIFO when two senders
  * race. Adding internal synchronisation here would give the illusion of safety without the
@@ -60,11 +58,11 @@ final class Mailbox {
     /**
      * Adds a message to the back of the queue.
      *
-     * <p>The bound counts <b>pending + inflight</b>. Inflight has to count: it is retained
+     * The bound counts pending + inflight. Inflight has to count: it is retained
      * state, and a client that never acks would otherwise grow the mailbox without limit
      * while the pending count looked healthy.
      *
-     * <p>Full means <b>reject the newest</b>, not evict the oldest. Evicting would silently
+     * Full means reject the newest, not evict the oldest. Evicting would silently
      * discard a message we already told a sender was {@code ACCEPTED}, breaking the one
      * promise that frame makes; rejecting tells the sender something they can act on.
      */
@@ -100,10 +98,10 @@ final class Mailbox {
     /**
      * Removes an acknowledged message.
      *
-     * <p>Returns false for an id this mailbox never held — which covers both a repeated ack
-     * and an ack for someone else's message. Both are treated identically and both are
-     * no-ops, because at-least-once delivery <em>guarantees</em> clients will sometimes ack
-     * twice: ack, connection drops before it lands, reconnect, redelivered, ack again.
+     * Returns false for an id this mailbox never held which covers both a repeated ack
+     * and an ack for someone else's message.
+     * Both are treated identically and both are no-ops, because at-least-once delivery guarantees clients
+     * will sometimes ack twice: ack, connection drops before it lands, reconnect, redelivered, ack again.
      * Erroring would punish a client for behaviour our own guarantee forces on it.
      */
     boolean ack(String messageId) {
@@ -111,9 +109,9 @@ final class Mailbox {
     }
 
     /**
-     * Returns everything delivered-but-unacknowledged to the <b>front</b> of pending, in its
+     * Returns everything delivered-but-unacknowledged to the front of pending, in its
      * original relative order. Called when the connection those messages were delivered to
-     * goes away — requirement 7 of the brief, and the basis of FIFO across reconnects.
+     * goes away requirement 7 of the brief, and the basis of FIFO across reconnects.
      */
     void requeueInflight() {
         if (inflight.isEmpty()) {
@@ -143,12 +141,11 @@ final class Mailbox {
     /**
      * Whether an id is live here, in either state.
      *
-     * <p>A linear scan of pending. At the default bound of 1000 messages that is
-     * inexpensive, and it avoids a third structure to keep in sync. A {@code HashSet} of
-     * live ids would make it O(1) at the cost of another thing that can drift — a trade
-     * worth naming rather than making silently.
+     * A linear scan of pending. At the default bound of 1000 messages that is
+     * inexpensive, and it avoids a third structure to keep in sync.
+     * Potentially could use {@code HashSet} here of live ids would make it O(1)
      *
-     * <p>Note this only knows about <em>live</em> ids. Once a message is acked and evicted,
+     * Note this only knows about live ids. Once a message is acked and evicted,
      * the same id would be accepted again as a new message. Unbounded dedupe history is a
      * memory leak, so that gap is deliberate; a bounded LRU of recently-acked ids is the
      * documented next step.

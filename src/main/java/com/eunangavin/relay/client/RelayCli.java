@@ -10,15 +10,15 @@ import java.nio.charset.StandardCharsets;
 /**
  * A terminal client. Four commands, no prompt, no history — deliberately minimal.
  *
- * <p><b>On scope:</b> the brief lists "a user interface" among the things not required. This
+ * On scope: the brief lists "a user interface" among the things not required. This
  * is not that. A length-prefixed binary protocol cannot be driven by hand — {@code netcat}
  * is useless against it — so without something like this there is no way to exercise the
  * server outside the test suite. It is capped at four verbs on purpose; anything more would
  * start becoming the thing the brief said not to build.
  *
- * <p><b>It does not auto-acknowledge.</b> That is the important behaviour here, for two
+ * It does not auto-acknowledge. That is the important behaviour here, for two
  * reasons. Demonstrating requirement 7 requires receiving a message and deliberately
- * <em>not</em> acking it before disconnecting. And auto-acking would be wrong anyway: it
+ * not acking it before disconnecting. And auto-acking would be wrong anyway: it
  * would let the server discard a message the instant it reached the socket, so a client that
  * died mid-processing would lose it — at-most-once, not at-least-once. The ack means "I have
  * taken responsibility", which only the application can say.

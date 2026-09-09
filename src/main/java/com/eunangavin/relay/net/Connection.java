@@ -26,36 +26,38 @@ import java.util.function.Consumer;
  * One TCP connection: a socket, a reader thread, a writer thread, and a bounded queue
  * between them.
  *
- * <h2>Why two threads</h2>
+ * Why two threads
  * The reader blocks on the socket; the writer blocks on the queue. Splitting them is what
  * makes the brief's "a slow client does not block unrelated clients" requirement true.
  *
- * <p>If delivery wrote straight to the recipient's socket it would do so on whichever
- * thread was delivering, which is the <em>sender's</em> reader thread. A
- * recipient that has stopped reading fills its kernel receive buffer, TCP's window closes,
+ * If delivery wrote straight to the recipient's socket it would do so on whichever
+ * thread was delivering, which is the sender's reader thread.
+ * A recipient that has stopped reading fills its kernel receive buffer, TCP's window closes,
  * our {@code write()} blocks, and now Alice's connection is stalled by Bob's problem.
  *
- * <p>With a writer thread and a bounded queue, delivery calls {@link #offer} and returns
+ * With a writer thread and a bounded queue, delivery calls {@link #offer} and returns
  * immediately. Backpressure stays inside this one connection.
  *
- * <h2>Why the queue is bounded, and what happens when it fills</h2>
- * Three options existed: block the offering thread (reintroduces the exact problem), drop
- * the frame (silently loses a message we may already have called ACCEPTED), or drop the
- * connection. We drop the connection — see {@code RelayService.sendOrDrop}. A client this
- * far behind is not keeping up, and its session outlives the socket, so reconnecting
+ * Why the queue is bounded, and what happens when it fills
+ * Three options existed:
+ * Block the offering thread (reintroduces the exact problem)
+ * Drop the frame (silently loses a message we may already have called ACCEPTED)
+ * Drop the connection.
+ * We drop the connection in {@code RelayService.sendOrDrop}.
+ * A client this far behind is not keeping up, and its session outlives the socket, so reconnecting
  * recovers everything.
  *
- * <h2>Closing without losing the last frame</h2>
- * Almost every close here follows a frame we actually want delivered — the takeover notice,
- * a MALFORMED_FRAME error, the SHUTDOWN broadcast. Interrupting the writer straight away
- * discards whatever is still queued, so the peer sees an unexplained EOF instead of the
- * reason.
+ * Closing without losing the last frame
+ * Almost every close here follows a frame we actually want delivered:
+ * The takeover notice, a MALFORMED_FRAME error, the SHUTDOWN broadcast.
+ * Interrupting the writer straight away discards whatever is still queued,
+ * so the peer sees an unexplained EOF instead of the reason.
  *
- * <p>So {@link #close} is <b>graceful</b>: it stops accepting new frames, enqueues a poison
+ * So {@link #close} is graceful: it stops accepting new frames, enqueues a poison
  * pill, and waits briefly for the writer to drain everything ahead of it and exit.
  * {@link #closeNow} is the hard version, used when the queue is jammed or the grace expires.
  *
- * <p>Waiting on <em>queue emptiness</em> would not work, and it is worth knowing why:
+ * Waiting on queue emptiness would not work, and it is worth knowing why:
  * {@code take()} removes a frame before writing it, so the queue reads empty while the
  * write is still in flight. The writer signalling its own exit is the only reliable
  * indication that everything actually reached the socket.
@@ -63,8 +65,8 @@ import java.util.function.Consumer;
 public final class Connection implements ClientConnection {
 
     /**
-     * Sentinel telling the writer to stop. Compared by <em>identity</em> and never
-     * transmitted, so it needs no distinct type — which matters because {@link Frame} is
+     * Sentinel telling the writer to stop. Compared by identity and never
+     * transmitted, so it needs no distinct type which matters because {@link Frame} is
      * sealed and adding a case for it would put a fake operation into the protocol.
      */
     private static final Frame POISON = new Frame.Shutdown("__writer-stop__");
@@ -189,8 +191,8 @@ public final class Connection implements ClientConnection {
      * Graceful close: stop accepting frames, let the writer flush what is already queued,
      * then tear the socket down. Idempotent and safe from any thread.
      *
-     * <p>If the queue is full the poison pill cannot be enqueued, the grace expires, and we
-     * force the close. That is the right outcome for a slow consumer — it is already too far
+     * If the queue is full the poison pill cannot be enqueued, the grace expires, and we
+     * force the close. That is the right outcome for a slow consumer it is already too far
      * behind to be worth waiting for.
      */
     @Override
@@ -213,22 +215,20 @@ public final class Connection implements ClientConnection {
     /**
      * Hard close. Anything still queued is lost.
      *
-     * <p>Two threads are parked in different ways and both must be freed:
-     * <ul>
-     *   <li>The writer is parked on {@code queue.take()} — interruptible, so
-     *       {@code interrupt()} frees it.</li>
-     *   <li>The reader is parked in a socket read. <b>Closing the socket</b> frees it, via
-     *       SocketException.</li>
-     * </ul>
+     * Two threads are parked in different ways and both must be freed:
+     * The writer is parked on {@code queue.take()} which is interruptible,
+     * so {@code interrupt()} frees it.
      *
-     * <p>The received wisdom is that interrupting cannot free a thread blocked in socket
-     * I/O, and for a <em>platform</em> thread that is true. It is <b>not</b> true here:
-     * our readers are <em>virtual</em> threads, which use the NIO-backed socket
-     * implementation and unblock on interrupt with a SocketException. Verified rather than
-     * assumed — a small probe showed a platform thread staying blocked while a virtual
+     * The reader is parked in a socket read. Closing the socket frees it, via SocketException.
+     *
+     * The received wisdom is that interrupting cannot free a thread blocked in socket
+     * I/O, and for a platform thread that is true.
+     * It is not< true here: our readers are virtual threads, which use the NIO-backed socket
+     * implementation and unblock on interrupt with a SocketException.
+     * Verified rather than assumed, a small probe showed a platform thread staying blocked while a virtual
      * thread was released by the identical interrupt.
      *
-     * <p>We close the socket anyway, for two reasons: it is correct regardless of thread
+     * We close the socket anyway, for two reasons: it is correct regardless of thread
      * type, and we want the file descriptor released rather than merely the thread freed.
      */
     void closeNow(String reason) {

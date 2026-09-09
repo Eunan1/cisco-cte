@@ -9,14 +9,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 /**
- * Frame dispatch — the relay's behaviour, with no knowledge of sockets or threads.
+ * Frame dispatch: The relay's behaviour, with no knowledge of sockets or threads.
  *
- * <p>Everything here runs on the calling connection's reader thread. That is deliberate:
- * there is no shared worker pool and no shared dispatcher, because a shared pool is exactly
- * how one slow client starves everyone else. Replies go out through
- * {@link ClientConnection#offer}, which never blocks.
+ * Everything here runs on the calling connection's reader thread.
+ * That is deliberate: there is no shared worker pool and no shared dispatcher, because a shared pool is exactly
+ * how one slow client starves everyone else.
+ * Replies go out through {@link ClientConnection#offer}, which never blocks.
  *
- * <p>For a {@code SEND} this means the <em>sender's</em> thread runs the recipient's
+ * For a {@code SEND} this means the sender's thread runs the recipient's
  * delivery pump. That is safe for one reason only: {@code offer} puts a frame on the
  * recipient's bounded queue and returns, so the sender's thread never touches the
  * recipient's socket however badly the recipient is behaving.
@@ -43,7 +43,7 @@ public final class RelayService {
     /**
      * Handles one inbound frame.
      *
-     * <p>The switch is <b>exhaustive with no {@code default} branch</b> — {@link Frame} is
+     * The switch is exhaustive with no {@code default} branch — {@link Frame} is
      * sealed, so the compiler knows every case. Adding a new frame type turns every
      * unhandled site into a compile error rather than a runtime surprise.
      */
@@ -72,6 +72,22 @@ public final class RelayService {
 
     // ------------------------------------------------------------------ register
 
+    /**
+     * {@code REGISTER} → {@code REGISTERED}, or {@code ERROR}.
+     *
+     * <p>Claims an identity for this connection. If the name is new a session is created; if
+     * it already exists the connection <b>reattaches to the same session</b>, mailbox intact
+     * — which is requirement 6, and the reason nothing needs to be restored on reconnect.
+     *
+     * <p>If another connection currently holds the name it is <b>evicted</b>, told why, and
+     * closed here rather than inside the session lock. Takeover rather than rejection,
+     * because a half-open TCP connection is undetectable until a write to it fails, so
+     * refusing would strand a client whose network dropped.
+     *
+     * <p>The {@code pending} count in the reply is read <em>after</em> attach, which has
+     * already requeued anything the previous connection left unacknowledged — so it is the
+     * true backlog, not a stale figure. The final {@link #pump} is what delivers it.
+     */
     private void handleRegister(ClientConnection connection, Frame.Register register) {
         if (connection.session() != null) {
             // One identity per connection, or the first session is left bound to a
@@ -111,6 +127,31 @@ public final class RelayService {
 
     // ------------------------------------------------------------------ send and ack
 
+    /**
+     * {@code SEND} → {@code ACCEPTED} or {@code REJECTED}.
+     *
+     * <p>Validates, resolves the recipient, and enqueues into <em>their</em> mailbox. Runs
+     * entirely on the <b>sender's</b> reader thread, including the recipient's delivery
+     * pump — safe only because {@link ClientConnection#offer} never blocks, so this thread
+     * stops at the recipient's queue and never touches their socket.
+     *
+     * <p>Two different rejection shapes, and the difference is whether the peer is still
+     * speaking the protocol:
+     * <ul>
+     *   <li><b>{@code REJECTED}</b> — keyed by {@code messageId}, connection survives:
+     *       unknown recipient, duplicate id, payload too large, mailbox full.</li>
+     *   <li><b>{@code ERROR} then close</b> — a SEND missing {@code messageId} cannot even
+     *       be rejected, because a Rejected frame is keyed by that id. There is nothing to
+     *       answer, so it is treated as a malformed frame.</li>
+     * </ul>
+     *
+     * <p>{@code ACCEPTED} is answered <b>before</b> the pump runs and means only "in the
+     * recipient's mailbox" — not delivered, not read. That ordering is what stops the
+     * sender's confirmation depending on whether the recipient is reachable.
+     *
+     * <p>Only the <b>recipient's</b> lock is ever taken. Locking sender and recipient
+     * together would deadlock the instant two clients sent to each other at once.
+     */
     private void handleSend(ClientConnection connection, Frame.Send send) {
         ClientSession sender = connection.session();
         if (sender == null) {
@@ -167,6 +208,24 @@ public final class RelayService {
         }
     }
 
+    /**
+     * {@code ACK} → {@code ACK_OK}, always.
+     *
+     * An acknowledgement is the only thing that removes a message. The lookup is scoped
+     * to the acking client's own mailbox, which makes "removed only after the correct
+     * recipient acknowledges it" structurally true: a client acking another client's id
+     * never holds a reference to that mailbox, so it cannot remove anything.
+     * That is stronger than an ownership check, which would leave a {@code remove(id)} on shared
+     * state one refactor away from a serious bug.
+     *
+     * ACK_OK is returned whether or not anything was removed. At-least-once delivery
+     * can produce duplicate acks: a client acks, the connection drops before it lands,
+     * the client reconnects, the message is redelivered, and it acks again. Erroring
+     * would punish the client for behaviour our own delivery guarantee forces on it.
+     *
+     * The cost is that an ack for the wrong recipient looks the same as a stale one.
+     * Both are harmless no-ops.
+     */
     private void handleAck(ClientConnection connection, Frame.Ack ack) {
         ClientSession session = connection.session();
         if (session == null) {
@@ -229,13 +288,13 @@ public final class RelayService {
     /**
      * Sends a frame, applying the slow-consumer policy when the queue is full.
      *
-     * <p>The policy lives here rather than in {@code Connection} because it is a relay
+     * The policy lives here rather than in {@code Connection} because it is a relay
      * decision, not a transport one. Three options existed: block the calling thread
      * (reintroduces the very problem the bounded queue solves — and the caller may be
      * another client's reader thread), drop the frame silently (loses a message we may
      * already have called ACCEPTED), or drop the connection.
      *
-     * <p>We drop the connection. A client this far behind is not keeping up, and its session
+     * We drop the connection. A client this far behind is not keeping up, and its session
      * outlives the socket, so reconnecting recovers everything it missed.
      */
     private void sendOrDrop(ClientConnection connection, Frame frame) {

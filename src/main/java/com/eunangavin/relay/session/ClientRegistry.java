@@ -8,9 +8,9 @@ import java.util.regex.Pattern;
 /**
  * All known identities, keyed by client id.
  *
- * <p>{@link ConcurrentHashMap} rather than a lock around a plain map: registrations from
- * different connections are independent and there is no reason to serialise them. Per-
- * identity coordination happens inside {@link ClientSession}, which holds its own lock, so
+ * {@link ConcurrentHashMap} rather than a lock around a plain map: registrations from
+ * different connections are independent and there is no reason to serialise them.
+ * Per-identity coordination happens inside {@link ClientSession}, which holds its own lock, so
  * the map only ever needs to make lookup and creation safe.
  */
 public final class ClientRegistry {
@@ -49,8 +49,8 @@ public final class ClientRegistry {
      * Claims an identity for a connection, creating the session if this is its first
      * appearance and reattaching to the existing one if it is not.
      *
-     * <p>Reattachment is the whole point: requirement 6 of the brief is satisfied by this
-     * method returning the <em>same</em> {@link ClientSession} instance after a disconnect,
+     * Reattachment is the whole point: requirement 6 of the brief is satisfied by this
+     * method returning the same {@link ClientSession} instance after a disconnect,
      * with its mailbox still intact.
      */
     public Registration register(String clientId, ClientConnection incoming) {

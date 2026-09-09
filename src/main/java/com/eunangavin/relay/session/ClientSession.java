@@ -71,7 +71,6 @@ public final class ClientSession {
      *   t0  connection A registers as "alice"       connection = A
      *   t1  connection B registers as "alice"       connection = B, A evicted
      *   t2  A's reader loop exits and detaches      ← must NOT null out B
-     * </pre>
      *
      * Without the check, a slow disconnect from an evicted connection silently kills the
      * healthy connection that replaced it moments earlier. The bug is invisible to any test
@@ -106,20 +105,7 @@ public final class ClientSession {
     /**
      * Delivers everything pending to the attached connection, if there is one.
      *
-     * <p>Runs on the <b>caller's</b> thread — for a SEND that is the <em>sender's</em>
-     * reader thread — while holding the <b>recipient's</b> lock. That is only safe because
-     * {@link ClientConnection#offer} never blocks: it puts a frame on the recipient's
-     * bounded queue and returns, and the recipient's own writer thread does the socket
-     * write. The sender's thread therefore never touches the recipient's socket, however
-     * badly the recipient is behaving.
-     *
-     * <p>Delivery is <b>pipelined</b>: everything available goes out rather than waiting for
-     * each ack. Stop-and-wait would cost a round trip per message and buy nothing, because
-     * the bounded queue already provides flow control. The consequence is that several
-     * messages are inflight at once and acks may arrive out of order — which is why inflight
-     * is a map keyed by id rather than a queue.
-     *
-     * @return a connection the <b>caller must close</b> because its outbound queue is full,
+     * @return a connection the caller must close because its outbound queue is full,
      *         or null. Closing is deliberately not done here: {@code close} is graceful and
      *         waits for the writer to drain, and holding this lock across that wait would
      *         let one slow socket stall every send to this identity.
@@ -147,7 +133,7 @@ public final class ClientSession {
     /**
      * Acknowledges a message.
      *
-     * <p>Scoped to <em>this</em> session's mailbox, which is what makes the brief's "removed
+     * Scoped to this session's mailbox, which is what makes the brief's "removed
      * only after the correct recipient acknowledges it" structurally true rather than a
      * check someone remembered to write: a client acking someone else's message id never
      * holds a reference to that mailbox, so it cannot remove anything.
