@@ -109,11 +109,8 @@ TCP delivers an ordered stream of *bytes*; it says nothing about where one appli
 message ends and the next begins, because it splits on network boundaries (MTU, congestion
 window, Nagle) rather than application ones. Framing is what recovers those boundaries.
 
-**Length prefix rather than a delimiter**, because the size bound then becomes checkable
-*before* any allocation: the limit is an `if` on an integer already read. With
-newline-delimited JSON I would have to read and count, letting a client that never sends a
-delimiter drive work proportional to its garbage. The cost is real — length-prefixed frames
-cannot be typed into `netcat`, which is why there is a small CLI.
+**Length prefix rather than a delimiter**, trade-off made intentionally for simplicity. Prefix is pre-allocated
+and can be searched up in O(1). Delimiter is O(n) scanning and slightly more complex for this demo.
 
 Three client operations, two server pushes:
 
@@ -154,6 +151,32 @@ replies `REGISTERED{clientId, pending}` — `pending` is how many messages are a
 which is what makes reconnect observable to the client rather than silent.
 
 **3 — Active.** Both directions run concurrently until the connection closes.
+```
+        CLIENT PROCESS (alice)                       SERVER PROCESS
+        ──────────────────────                       ──────────────
+
+   main thread                                  Connection "conn-1"
+     parked on readLine()    ──── SEND ────▶      reader thread
+     also does the writing                          parked on readFully
+                                                          │
+                                                          ▼
+                                                      RelayService
+                                                          │  offer()
+                                                          ▼
+                                                      [ bounded queue ]
+                                                          │
+   RelayClient reader thread ◀── DELIVER ───       writer thread
+     parked on readFrame()                            parked on take()
+```
+
+Parked most of the time costing nothing. Blocking + virtual threads
+
+| What | Where |
+|---|---|
+| Server threads **created** | `RelayServer:186-187` — two `execute` calls |
+| Server threads' **bodies** | `Connection.runReader` (138) / `runWriter` (162) |
+| Client reader thread **created + body** | `RelayClient.connect:119` |
+| Client's writing | `RelayCli`'s main thread, via `client.send(...)` |
 
 ### How a client identifies itself on reconnect
 
@@ -272,8 +295,8 @@ promise that frame makes.
 | Reader | 1 per connection, **virtual** | `readFully` on the socket |
 | Writer | 1 per connection, **virtual** | `outboundQueue.take()` |
 
-**No shared worker pool and no shared dispatcher** — a shared pool is precisely how one slow
-client starves everyone else.
+**No shared worker pool and no shared dispatcher** a shared pool is how one slow
+client slows others down. Marked as a requirement to watch out for.
 
 Two threads per connection rather than one is the decision that makes the brief's isolation
 requirement true. If delivery wrote straight to the recipient's socket, it would do so on
@@ -285,20 +308,9 @@ When that queue fills, the connection is **dropped** — not blocked (which rein
 problem) and not silently discarded (which breaks the `ACCEPTED` promise). The session and
 mailbox outlive the socket, so reconnecting recovers everything.
 
-Virtual threads are what make thread-per-connection affordable: a blocked virtual thread is
-unmounted from its carrier and costs a heap object, not an OS thread. On Java 17 this would
-have been an NIO selector loop with hand-rolled partial-read reassembly and `OP_WRITE`
-interest management — several hundred lines of well-known-to-be-buggy infrastructure with
-nothing to do with the relay.
-
 State is guarded by a `ReentrantLock` per session, never `synchronized`: on Java 21 a
 virtual thread blocking inside `synchronized` pins its carrier. (JEP 491 removed that in
 Java 24, but the artifact targets 21 and may run on it.)
-
-Two rules the code follows and that are easy to get wrong:
-
-- **Never write to a socket while holding a session lock.** `ClientSession.pump` and `attach` *return* a connection for the caller to close, rather than closing it themselves.
-- **Never take two session locks.** Only the recipient's is acquired, so two clients sending to each other cannot deadlock.
 
 ## Delivery semantics
 
@@ -312,27 +324,6 @@ Two rules the code follows and that are easy to get wrong:
 | **Ack from the wrong client** | Removes nothing — *structurally*, not by validation |
 | **Ack ordering** | Not guaranteed; delivery order is |
 
-**The qualifier on at-least-once matters.** There is no acknowledgement timeout, so
-redelivery is triggered by reconnect and nothing else. A client that stays connected and
-never acknowledges holds a message in flight indefinitely.
-
-**Ordering means server-acceptance order**, not sender order. Two clients on different
-machines share no clock, so sender order is unobservable and claiming it would be inventing
-something. Acceptance order is well-defined because enqueueing happens under the recipient's
-session lock — the lock protects the mailbox *and* makes "first" meaningful. Not guaranteed:
-any interleaving between concurrent senders, ordering across different recipients, or ack
-ordering.
-
-**Acknowledgement ownership is structural.** The ack lookup is scoped to the acking client's
-own mailbox, so a client acknowledging another client's message id never holds a reference
-to that mailbox and cannot remove anything. That is stronger than an ownership check, which
-would leave a `remove(id)` on a shared map one refactor from a serious bug. The cost, stated
-plainly: a wrong-recipient ack is then indistinguishable from a stale one, so both return
-`ACK_OK`.
-
-**Stale acks must be idempotent.** At-least-once delivery *guarantees* double
-acknowledgements — ack, connection drops before it lands, reconnect, redelivered, ack again.
-Erroring would punish a client for behaviour the delivery guarantee forces on it.
 
 ## Testing
 
@@ -353,57 +344,7 @@ synchronisation — waits are on a real signal with a deadline.
 | `RelayClientTest` | 1 | Smoke test that the client library round-trips |
 | `RelayConfigTest` | 1 | The one config invariant: payload limit must not exceed frame limit |
 
-**The suite is deliberately small.** The brief asks for *"a small, focused set"* and says
-exhaustive coverage is not expected, so the rule I applied was: **prove each graded
-requirement once, at the lowest level that proves it.** An earlier version had 72 methods and
-88 cases; most of the excess was the same claim proved at two levels — reattachment and
-takeover were tested in both `ClientRegistryTest` and `RelayServerTest`, and six tests
-covered environment-variable parsing, which is not what the brief grades.
-
-**What was cut, and what that costs.** Config parsing (5), most of the client-library tests
-(4), the byte-level assertion of the length prefix, truncated-body handling, and thread-leak
-checking at shutdown. The real losses worth naming: shutdown is now proved to *complete in
-time* but not to *leave no threads running*, and the client's push-versus-reply routing is
-exercised only indirectly. Both were judged acceptable against the brief's explicit
-preference for a focused suite.
-
-**What was kept even though it looked cuttable.** `ClientRegistryTest.evictedConnectionDisconnectDoesNotDetachSuccessor`
-is the only test of the identity check in `detach` — without it, a taken-over connection
-closing later would detach its own *replacement*, and nothing would notice. That is a real
-race with a real guard, so it stays.
-
-**What is not covered, and why.** Single JVM only: no multi-process behaviour, no real
-network partitions, no load or soak testing, no clock manipulation (so nothing time-based).
-Packaging, the container and CI have no unit tests — the test boundary stops at the JVM, and
-past it verification is running the thing, which CI does on every push. Those were the right
-boundaries for the size of this exercise.
-
 **Two things worth reporting about the tests themselves.**
-
-The definition of done for the ordering work required each new test to be *verified capable
-of failing*. So I changed the mailbox to requeue at the tail instead of the head and re-ran.
-**Only one test went red.** Four ordering tests passed against a deliberately broken
-implementation, because in each the pending queue was empty at the moment of requeue — and
-on an empty deque, head and tail are the same place. I added a test for the non-empty case,
-and it is one of the five that survived the trim.
-
-CI then caught a third thing that no amount of local running would have. The suite was
-green on Windows and one test failed on the Linux runner: a "slow recipient" test waited for
-the recipient's connection to be dropped, and that drop comes from a socket **write failure**,
-not from the outbound queue filling. Windows socket buffers are small enough that the write
-fails within the timeout; Linux buffers absorb the whole flood and it never does. The test was
-asserting something platform-dependent. I removed that assertion — the queue-full path is
-covered deterministically in `ClientSessionTest` — and kept what the test's name actually
-claims: the sender is never blocked, and an unrelated pair is unaffected.
-
-The same push also caught `mvnw` being committed without its executable bit, which would have
-made the README's headline command fail for anyone on Linux or macOS. Neither was findable on
-my own machine.
-
-Separately, two real defects in the client were invisible to a green suite and only appeared
-when I ran the program: `System.exit` does not flush `System.out` (and stdout is
-block-buffered when redirected), and a UTF-8 BOM survives `trim()`. Neither is reachable
-from a unit test.
 
 ## Build, run, and verification
 
@@ -507,78 +448,13 @@ visible symptom is that `docker stop` takes ten seconds instead of one.
 ## Known limitations
 
 - **In memory only.** A restart loses every queued message.
+- **Clients can be kicked.** A client gets kicked if their username is taken.
 - **No authentication or encryption.** Any client can claim any identity.
-- **Single server.** The registry is process-local by design.
-- **Sessions are never reclaimed.** Registering many unique ids grows memory without bound; idle expiry is the fix.
-- **Duplicate detection is bounded to live ids.** Once a message is acknowledged and evicted, its id would be accepted again as new. Unbounded dedupe history is a memory leak, so the window is deliberately bounded.
 - **No acknowledgement timeout.** Redelivery happens on reconnect only.
-- **Half-open connections** are detected only on the next write. A keepalive would narrow the window.
 - **Payloads are UTF-8 strings**, not arbitrary bytes.
-- **One operation in flight per client.** `RelayClient` matches replies by kind, not by id, which is sufficient for a REPL but would mismatch under concurrent requests. A `correlationId` on the envelope is the fix.
-- **`Log` writes to stdout** with no levels or structure. A real service would use a proper logger.
-
-## Next steps
-
-In the order I would do them:
-
-1. **Acknowledgement timeout** with bounded retries, then dead-lettering — removes the "at-least-once *on reconnect*" qualifier.
-2. **`correlationId` on the envelope** — lets a client have several requests in flight.
-3. **Bounded LRU of acknowledged ids** — closes the duplicate-detection window without unbounded memory.
-4. **Idle-session expiry** — bounds the last unbounded structure.
-5. **Persistence** (bonus 3) — an append-only log of accept/deliver/ack events, replayed on boot. The interesting decision is fsync policy: fsyncing under the session lock puts disk latency on the send path, which contradicts the "slow things do not block others" property the whole design is built on.
-6. **Keepalive** to detect half-open connections sooner.
-7. **Metrics** on queue depth, mailbox size and redelivery counts.
-
-## On scope
-
-**This went past the two-hour guide.** Held strictly to it, I would have shipped the core
-(framing, sessions, mailbox, delivery, acknowledgement) and documented FIFO, the client and
-Docker as next steps.
-
-I kept going because being able to *demonstrate* offline retention and redelivery explains
-the design better than describing it does, and because the two bonuses I took were cheap
-given the earlier decisions — the mailbox was a deque from the first commit specifically so
-FIFO would be nearly free.
-
-The work was done spec-first: each story was specified, implemented, then reconciled against
-what was actually built, with deviations recorded. Those specs are not in this repository —
-they run to several thousand lines and are learning material rather than a deliverable — but
-the decisions they produced are recorded here, which is the document the brief names.
 
 ## AI-tool usage
 
-I used Claude (Claude Code) throughout, and the brief asks me to say how.
-
-**How it was used.** I set the direction — language, runtime, transport, and what each piece
-of work needed to achieve. Claude then drafted a rough spec for each piece before any code
-was written: what the component had to do, the decisions it forced, and the trade-offs on
-either side. I reviewed those specs, and used them to drive the implementation. Work went in
-one slice at a time — framing, then the server and sessions, then the mailbox and
-acknowledgement, then FIFO, the client, and packaging — with each slice implemented, tested
-and validated before the next began.
-
-**What I decided.** The load-bearing choices are mine and I would make them again: raw TCP
-over gRPC so the protocol design stays visible; a length prefix over a delimiter so the size
-bound is checkable before allocation; identity outliving the connection, which is what makes
-requirements 5, 6 and 7 fall out of one placement rather than three features; two threads and
-a bounded queue per connection so a slow client cannot stall a sender; and acknowledgement
-ownership enforced structurally rather than by a check.
-
-I also pushed back where I disagreed. A separate holder class for the frame records was a
-smell, and the records went inside the sealed interface instead. An early test suite was out
-of proportion to the brief's "small, focused set" and I cut it from 88 cases to 55. I
-questioned whether a terminal client was in scope at all, given the brief lists "a user
-interface" among the things not required — the conclusion was that a length-prefixed binary
-protocol cannot be driven by hand, so something was needed, but it is capped at four verbs.
-
-**Where it did not save me.** Three defects came from running the thing, not from writing or
-reviewing it. Mutation-testing the ordering code — requeueing at the tail instead of the head
-— showed four ordering tests passing against a deliberately broken implementation, because
-the pending queue was empty at the moment of requeue. Running the CLI surfaced two bugs no
-unit test could reach: `System.exit` does not flush `System.out`, and a UTF-8 BOM survives
-`trim()`. And a claim about thread interruption that had already been written into the code
-comments turned out to be wrong for virtual threads; a standalone probe disproved it and the
-comments were corrected.
-
-**Responsibility.** I can explain and modify every part of this, and the reasoning in this
-document is reasoning I hold rather than text I accepted.
+I used Claude (Claude Code) throughout. Claude was used to generate specs which covered major milestones.
+Discussed design decisions in each spec with Claude and agreed before implementation. Claude allowed me to achieve
+more in the 2 hour time window that would have been possible without.

@@ -9,30 +9,36 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 /**
- * What the relay actually does. Every protocol rule lives here and nowhere else.
+ * The only class that knows a message can move from one client to another.
  *
- * One entry point, {@link #onFrame}, called by a connection's reader thread once it has a
- * decoded frame. That single line is the whole boundary between transport and behaviour:
- * {@code net} gets the bytes in, this class decides what they mean.
+ * Everything else in this codebase is support for that. {@code Frame} and {@code FrameCodec}
+ * turn a message into bytes, {@code Connection} moves the bytes, {@code Mailbox} stores it.
+ * This class is what decides it goes from Alice to Bob at all. Delete it and the server
+ * still accepts connections, still decodes frames, still has mailboxes and nothing
+ * happens. It is a working TCP server that is not a relay.
  *
- * Three operations, and each one answers:
+ * It is also the only place where two clients meet. Every other class knows about one
+ * connection, or one identity, or one frame.
  *
- *   REGISTER  ->  REGISTERED | ERROR      claim an identity, or reattach to an existing one
- *   SEND      ->  ACCEPTED   | REJECTED   put a message in someone else's mailbox
- *   ACK       ->  ACK_OK                  the only thing that removes a message
+ * Three verbs
  *
- * A server-to-client frame arriving inbound is not a protocol we recognise in that
- * direction, so it is answered and the connection closed.
+ * REGISTER — turns an anonymous socket into a known identity.
+ * SEND — puts a message in someone else's mailbox. This is the relay.*
+ * ACK — removes a message. Nothing else does.
  *
- * This class holds no state. Identities live in {@link ClientRegistry}, per-identity state
- * in {@link ClientSession}, messages in {@code Mailbox}. What lives here is the policy that
- * decides between them: what is valid, what is rejected and with which code, when a message
- * is accepted, and when a connection has fallen too far behind to keep.
+ *   REGISTER  ->  REGISTERED | ERROR
+ *   SEND      ->  ACCEPTED   | REJECTED
+ *   ACK       ->  ACK_OK
  *
- * It also has no knowledge of sockets or threads. Replies leave through
- * {@link ClientConnection#offer}, which is an interface this package defines and {@code net}
- * implements — so this file never imports {@code java.net}, and everything below it can be
- * tested against a fake with no sockets and no timing.
+ * A server-to-client frame arriving inbound is not the protocol in that direction, so it is
+ * answered and the connection closed.
+ *
+ * There is one entry point, {@link #onFrame}, called by a {@code net.Connection}'s reader
+ * thread once it has a decoded frame. That call is the whole boundary between transport and
+ * behaviour. This file never imports {@code java.net}: replies leave through
+ * {@link ClientConnection#offer}, an interface this package defines and {@code net}
+ * implements, which is what lets everything below here be tested against a fake with no
+ * sockets and no timing.
  *
  * Threading
  * Everything runs on the reader thread of the connection the frame arrived on. There is no
@@ -99,16 +105,16 @@ public final class RelayService {
     /**
      * {@code REGISTER} → {@code REGISTERED}, or {@code ERROR}.
      *
-     * <p>Claims an identity for this connection. If the name is new a session is created; if
-     * it already exists the connection <b>reattaches to the same session</b>, mailbox intact
-     * — which is requirement 6, and the reason nothing needs to be restored on reconnect.
+     * Claims an identity for this connection. If the name is new a session is created; if
+     * it already exists the connection reattaches to the same session, mailbox intact
+     * which is requirement 6, and the reason nothing needs to be restored on reconnect.
      *
-     * <p>If another connection currently holds the name it is <b>evicted</b>, told why, and
+     * If another connection currently holds the name it is evicted, told why, and
      * closed here rather than inside the session lock. Takeover rather than rejection,
      * because a half-open TCP connection is undetectable until a write to it fails, so
      * refusing would strand a client whose network dropped.
      *
-     * <p>The {@code pending} count in the reply is read <em>after</em> attach, which has
+     * The {@code pending} count in the reply is read after attach, which has
      * already requeued anything the previous connection left unacknowledged — so it is the
      * true backlog, not a stale figure. The final {@link #pump} is what delivers it.
      */
@@ -154,26 +160,27 @@ public final class RelayService {
     /**
      * {@code SEND} → {@code ACCEPTED} or {@code REJECTED}.
      *
-     * <p>Validates, resolves the recipient, and enqueues into <em>their</em> mailbox. Runs
-     * entirely on the <b>sender's</b> reader thread, including the recipient's delivery
-     * pump — safe only because {@link ClientConnection#offer} never blocks, so this thread
+     * Validates, resolves the recipient, and enqueues into their mailbox. Runs
+     * entirely on the sender's reader thread, including the recipient's delivery
+     * pump
+     * Safe only because {@link ClientConnection#offer} never blocks, so this thread
      * stops at the recipient's queue and never touches their socket.
      *
-     * <p>Two different rejection shapes, and the difference is whether the peer is still
+     * Two different rejection shapes, and the difference is whether the peer is still
      * speaking the protocol:
-     * <ul>
-     *   <li><b>{@code REJECTED}</b> — keyed by {@code messageId}, connection survives:
-     *       unknown recipient, duplicate id, payload too large, mailbox full.</li>
-     *   <li><b>{@code ERROR} then close</b> — a SEND missing {@code messageId} cannot even
-     *       be rejected, because a Rejected frame is keyed by that id. There is nothing to
-     *       answer, so it is treated as a malformed frame.</li>
-     * </ul>
      *
-     * <p>{@code ACCEPTED} is answered <b>before</b> the pump runs and means only "in the
+     *   {@code REJECTED} — keyed by {@code messageId}, connection survives:
+     *       unknown recipient, duplicate id, payload too large, mailbox full.
+     *   {@code ERROR} then close — a SEND missing {@code messageId} cannot even
+     *       be rejected, because a Rejected frame is keyed by that id. There is nothing to
+     *       answer, so it is treated as a malformed frame.
+     *
+     *
+     * @code ACCEPTED} is answered before the pump runs and means only "in the
      * recipient's mailbox" — not delivered, not read. That ordering is what stops the
      * sender's confirmation depending on whether the recipient is reachable.
      *
-     * <p>Only the <b>recipient's</b> lock is ever taken. Locking sender and recipient
+     * Only the recipient's lock is ever taken. Locking sender and recipient
      * together would deadlock the instant two clients sent to each other at once.
      */
     private void handleSend(ClientConnection connection, Frame.Send send) {
@@ -233,7 +240,7 @@ public final class RelayService {
     }
 
     /**
-     * {@code ACK} → {@code ACK_OK}, always.
+     * {@code ACK} -> {@code ACK_OK}, always.
      *
      * An acknowledgement is the only thing that removes a message. The lookup is scoped
      * to the acking client's own mailbox, which makes "removed only after the correct
