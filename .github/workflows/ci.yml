@@ -1,0 +1,29 @@
+# Deliberately minimal. The brief calls CI a discussion topic, not a requirement, so this
+# does exactly one useful job: it re-runs the documented build on a machine that has never
+# seen the project, with an empty ~/.m2. That is the "verify the documented commands"
+# check from the brief, automated on every push.
+name: build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # 21, not 25: the artifact targets 21, so CI should build what ships.
+          java-version: '21'
+          cache: maven
+
+      - name: Build and test
+        run: ./mvnw -B verify
+
+      - name: Upload the runnable jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-jar
+          path: target/relay-1.0.0.jar

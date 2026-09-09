@@ -1,0 +1,8 @@
+# Keep the build context small and stop host build output leaking into the image.
+target/
+.git/
+.github/
+.idea/
+docs/
+*.md
+!pom.xml

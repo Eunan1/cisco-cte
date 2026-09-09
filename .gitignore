@@ -1,0 +1,46 @@
+# --- build output ---------------------------------------------------------
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# --- IDE / OS -------------------------------------------------------------
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
+
+# --- Working material, deliberately NOT part of the submission ------------
+# The story specs are ~3,500 lines of teaching material written while building.
+# They are learning notes, not a deliverable, and the proportion against ~900
+# lines of source would draw attention to scope rather than rigour.
+docs/stories/
+
+# Decision records. The reasoning they hold is summarised in APPROACH.md, which is
+# the deliverable the brief actually names; shipping both duplicates the argument.
+docs/adr/
+
+# Analysis of the brief itself (what is being graded, traps). Prep material.
+docs/OVERVIEW.md
+
+# Index of the above; its links would all dangle.
+docs/README.md
+
+# Interview preparation - predicted questions, rehearsed answers, tour route.
+# Must never ship.
+docs/INTERVIEW-PLAN.md
+
+# File-by-file walkthrough written for rehearsal. Prep material.
+docs/CODE-TOUR.md
+
+# Working instructions and conventions, with interview-specific content.
+CLAUDE.md
+
+# Claude Code local state.
+.claude/
+
+# --- What DOES ship from docs/ -------------------------------------------
+#   docs/PROTOCOL.md   wire format, linked from README and APPROACH
+#   docs/DEMO.md       the walkthrough, linked from README
+#   (nothing else)
