@@ -387,6 +387,19 @@ implementation, because in each the pending queue was empty at the moment of req
 on an empty deque, head and tail are the same place. I added a test for the non-empty case,
 and it is one of the five that survived the trim.
 
+CI then caught a third thing that no amount of local running would have. The suite was
+green on Windows and one test failed on the Linux runner: a "slow recipient" test waited for
+the recipient's connection to be dropped, and that drop comes from a socket **write failure**,
+not from the outbound queue filling. Windows socket buffers are small enough that the write
+fails within the timeout; Linux buffers absorb the whole flood and it never does. The test was
+asserting something platform-dependent. I removed that assertion — the queue-full path is
+covered deterministically in `ClientSessionTest` — and kept what the test's name actually
+claims: the sender is never blocked, and an unrelated pair is unaffected.
+
+The same push also caught `mvnw` being committed without its executable bit, which would have
+made the README's headline command fail for anyone on Linux or macOS. Neither was findable on
+my own machine.
+
 Separately, two real defects in the client were invisible to a green suite and only appeared
 when I ran the program: `System.exit` does not flush `System.out` (and stdout is
 block-buffered when redirected), and a UTF-8 BOM survives `trim()`. Neither is reachable

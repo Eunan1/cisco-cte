@@ -324,18 +324,17 @@ class DeliveryTest {
             assertEquals("unaffected", dave.expect(Frame.Deliver.class).payload());
         });
 
-        // bob's connection dies and his identity survives it. NOTE the mechanism: the drop
-        // here comes from a socket write failure, not from the outbound queue filling. OS
-        // socket buffers (~64 KiB each side) absorb thousands of small frames before the
-        // application queue ever backs up, so a flood of this size cannot reach
-        // SLOW_CONSUMER. That path is covered deterministically in ClientSessionTest with a
-        // connection that refuses offers - a socket-level test of it would depend on OS
-        // buffer sizes and be flaky.
+        // What this test proves, which is exactly what its name claims: alice is never
+        // blocked by bob, and carol -> dave is entirely unaffected.
         //
-        // What this test does prove, which is what its name claims: alice is never blocked
-        // by bob, and carol -> dave is entirely unaffected.
-        awaitOffline(session("bob"));
-        assertTrue(registry.find("bob").isPresent(), "bob's identity survives being dropped");
+        // What it deliberately does NOT assert is that bob's connection gets dropped. That
+        // drop comes from a socket WRITE FAILURE, not from the outbound queue filling, so
+        // whether it happens inside any timeout depends on the OS socket buffer sizes -
+        // it fires on Windows and does not on Linux, where the buffers absorb this flood.
+        // The queue-full path is covered deterministically in ClientSessionTest against a
+        // connection that refuses offers. Asserting it here would be a platform-dependent
+        // test, and the brief asks for deterministic ones.
+        assertTrue(registry.find("bob").isPresent(), "bob's identity survives the flood");
         assertTrue(session("bob").mailboxSize() > 0, "and his messages are still retained");
     }
 }
