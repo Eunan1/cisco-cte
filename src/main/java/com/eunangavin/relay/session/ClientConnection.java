@@ -20,6 +20,7 @@ import com.eunangavin.relay.protocol.Frame;
 public interface ClientConnection {
 
     /**
+     * ATTENTION
      * Hands a frame to this connection's outbound queue.
      *
      * Never blocks. The caller is another client's reader thread, and blocking

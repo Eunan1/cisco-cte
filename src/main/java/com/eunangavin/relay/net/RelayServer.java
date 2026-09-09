@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Binds a port, accepts connections, and shuts down predictably.
+ * binds, accepts, spawns threads
  *
  * The acceptor runs on a platform thread — there is exactly one and it lives for the
  * process, so a virtual thread would buy nothing.

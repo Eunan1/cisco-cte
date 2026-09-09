@@ -9,17 +9,41 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 /**
- * Frame dispatch: The relay's behaviour, with no knowledge of sockets or threads.
+ * What the relay actually does. Every protocol rule lives here and nowhere else.
  *
- * Everything here runs on the calling connection's reader thread.
- * That is deliberate: there is no shared worker pool and no shared dispatcher, because a shared pool is exactly
- * how one slow client starves everyone else.
- * Replies go out through {@link ClientConnection#offer}, which never blocks.
+ * One entry point, {@link #onFrame}, called by a connection's reader thread once it has a
+ * decoded frame. That single line is the whole boundary between transport and behaviour:
+ * {@code net} gets the bytes in, this class decides what they mean.
  *
- * For a {@code SEND} this means the sender's thread runs the recipient's
- * delivery pump. That is safe for one reason only: {@code offer} puts a frame on the
- * recipient's bounded queue and returns, so the sender's thread never touches the
- * recipient's socket however badly the recipient is behaving.
+ * Three operations, and each one answers:
+ *
+ *   REGISTER  ->  REGISTERED | ERROR      claim an identity, or reattach to an existing one
+ *   SEND      ->  ACCEPTED   | REJECTED   put a message in someone else's mailbox
+ *   ACK       ->  ACK_OK                  the only thing that removes a message
+ *
+ * A server-to-client frame arriving inbound is not a protocol we recognise in that
+ * direction, so it is answered and the connection closed.
+ *
+ * This class holds no state. Identities live in {@link ClientRegistry}, per-identity state
+ * in {@link ClientSession}, messages in {@code Mailbox}. What lives here is the policy that
+ * decides between them: what is valid, what is rejected and with which code, when a message
+ * is accepted, and when a connection has fallen too far behind to keep.
+ *
+ * It also has no knowledge of sockets or threads. Replies leave through
+ * {@link ClientConnection#offer}, which is an interface this package defines and {@code net}
+ * implements — so this file never imports {@code java.net}, and everything below it can be
+ * tested against a fake with no sockets and no timing.
+ *
+ * Threading
+ * Everything runs on the reader thread of the connection the frame arrived on. There is no
+ * worker pool and no shared dispatcher, because a shared pool is exactly how one slow client
+ * starves everyone else.
+ *
+ * For a SEND this means the sender's thread runs the recipient's delivery pump, while
+ * holding the recipient's lock. That is safe for one reason only: {@code offer} never
+ * blocks. It hands a frame to the recipient's bounded queue and returns, so the sender's
+ * thread stops at that queue and never touches the recipient's socket, however badly the
+ * recipient is behaving.
  */
 public final class RelayService {
 

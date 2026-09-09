@@ -125,7 +125,7 @@ Three client operations, two server pushes:
 
 Frames are a sealed interface with all ten types nested as records, so handler switches are
 exhaustive at compile time — adding a frame type turns every unhandled site into a compile
-error. Full detail in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+error. Full detail in [docs/PROTOCOL.md](docs/others/PROTOCOL.md).
 
 ## Connection lifecycle
 

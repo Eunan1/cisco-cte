@@ -103,6 +103,8 @@ public final class ClientSession {
     }
 
     /**
+     * ATTENTION
+     *
      * Delivers everything pending to the attached connection, if there is one.
      *
      * @return a connection the caller must close because its outbound queue is full,

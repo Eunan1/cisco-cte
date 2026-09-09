@@ -7,7 +7,7 @@ acknowledge them. Messages for an offline client are retained and delivered when
 reconnects; a message that was delivered but never acknowledged is delivered again.
 
 Design reasoning is in **[APPROACH.md](APPROACH.md)**. The wire format is in
-**[docs/PROTOCOL.md](docs/PROTOCOL.md)**.
+**[docs/PROTOCOL.md](docs/others/PROTOCOL.md)**.
 
 ---
 
@@ -100,7 +100,7 @@ time docker stop <container>     # well under a second
 
 ### A guided walkthrough
 
-**[docs/DEMO.md](docs/DEMO.md)** is a nine-step script that exercises all seven
+**[docs/DEMO.md](docs/others/DEMO.md)** is a nine-step script that exercises all seven
 requirements in about ninety seconds, including offline retention and redelivery of
 unacknowledged messages.
 
@@ -222,5 +222,5 @@ uses `Thread.sleep` for synchronisation. What they do and do not cover is discus
 | | |
 |---|---|
 | [APPROACH.md](APPROACH.md) | Architecture, protocol, concurrency, delivery semantics, trade-offs, limitations |
-| [docs/PROTOCOL.md](docs/PROTOCOL.md) | Wire format, framing, and why TCP needs it |
-| [docs/DEMO.md](docs/DEMO.md) | The nine-step walkthrough |
+| [docs/PROTOCOL.md](docs/others/PROTOCOL.md) | Wire format, framing, and why TCP needs it |
+| [docs/DEMO.md](docs/others/DEMO.md) | The nine-step walkthrough |

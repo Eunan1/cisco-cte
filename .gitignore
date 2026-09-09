@@ -11,7 +11,7 @@ target/
 .DS_Store
 *.log
 
-docs/
+docs/others
 
 # Working instructions and conventions, with interview-specific content.
 CLAUDE.md

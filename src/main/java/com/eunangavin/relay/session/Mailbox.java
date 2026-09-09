@@ -19,7 +19,7 @@ import java.util.List;
  *
  * Why two structures
  * A mailbox must answer two different questions:
- * What has not been sent, and what has been sent but not confirmed.
+ * What has not been sent, and what has been sent but not ack.
  * A single list with a cursor ("everything before index n is sent") breaks the moment an ack removes an element
  * from the middle, which is normal because acks may arrive out of order.
  *
